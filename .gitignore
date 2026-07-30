@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+
+# Local requirements and downloaded reference material
+need/
+
+# Local build directories
+build/
+cmake-build-*/
+out/
+
+# Visual Studio and qmake build outputs
+**/x64/
+**/Debug/
+**/Release/
+.qmake.stash
+*.vcxproj.user
+*.obj
+*.pdb
+*.ilk
+*.tlog
+*.lastbuildstate
+*.exe
+*.dll
+*.lib
+*.exp
+
+# Generated Qt translations
+*.qm
+
+# Runtime and diagnostic outputs
+*.log
+*.pcap
+*.tr
