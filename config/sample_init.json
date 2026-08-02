@@ -1,0 +1,124 @@
+{
+  "protocol_version": "0.2",
+  "message_type": "afsim_init",
+  "request_id": "init-001",
+  "timestamp_ms": 0,
+  "entities": [
+    {
+      "entity_id": "AFSIM-1",
+      "business_node_id": "NODE-1",
+      "parent_entity_id": null,
+      "position": {
+        "x_m": 0.0,
+        "y_m": 0.0,
+        "z_m": 0.0
+      },
+      "velocity": {
+        "vx_mps": 0.0,
+        "vy_mps": 0.0,
+        "vz_mps": 0.0
+      },
+      "heading_deg": 0.0,
+      "alive": true,
+      "devices": [
+        {
+          "device_id": "LINK-1",
+          "peer_entity_id": "AFSIM-2",
+          "kind": "wired",
+          "data_rate_bps": 10000000,
+          "delay_ms": 10.0,
+          "loss_rate": 0.0,
+          "link_state": "UP"
+        }
+      ],
+      "effect_policies": [
+        {
+          "subsystem_id": "WEAPON-1",
+          "subsystem_type": "weapon",
+          "peer_entity_id": "AFSIM-2",
+          "max_delay_ms": 50.0,
+          "max_loss_rate": 0.2,
+          "min_throughput_bps": 100000.0,
+          "violation_state": "BLOCKED"
+        },
+        {
+          "subsystem_id": "RADAR-1",
+          "subsystem_type": "radar",
+          "peer_entity_id": "AFSIM-2",
+          "max_delay_ms": 50.0,
+          "max_loss_rate": 0.2,
+          "min_throughput_bps": 100000.0,
+          "violation_state": "DEGRADED"
+        }
+      ]
+    },
+    {
+      "entity_id": "AFSIM-2",
+      "business_node_id": "NODE-2",
+      "parent_entity_id": null,
+      "position": {
+        "x_m": 1000.0,
+        "y_m": 0.0,
+        "z_m": 0.0
+      },
+      "velocity": {
+        "vx_mps": 0.0,
+        "vy_mps": 0.0,
+        "vz_mps": 0.0
+      },
+      "heading_deg": 180.0,
+      "alive": true,
+      "devices": [
+        {
+          "device_id": "LINK-2",
+          "peer_entity_id": "AFSIM-3",
+          "kind": "wired",
+          "data_rate_bps": 5000000,
+          "delay_ms": 5.0,
+          "loss_rate": 0.0,
+          "link_state": "UP"
+        }
+      ],
+      "effect_policies": []
+    },
+    {
+      "entity_id": "AFSIM-3",
+      "business_node_id": "NODE-3",
+      "parent_entity_id": null,
+      "position": {
+        "x_m": 2000.0,
+        "y_m": 0.0,
+        "z_m": 0.0
+      },
+      "velocity": {
+        "vx_mps": 0.0,
+        "vy_mps": 0.0,
+        "vz_mps": 0.0
+      },
+      "heading_deg": 180.0,
+      "alive": true,
+      "devices": [],
+      "effect_policies": []
+    }
+  ],
+  "flows": [
+    {
+      "flow_id": "FLOW-1",
+      "source_entity_id": "AFSIM-1",
+      "target_entity_id": "AFSIM-2",
+      "packet_size_bytes": 1024,
+      "interval_ms": 10,
+      "duration_ms": 1000,
+      "active": true
+    },
+    {
+      "flow_id": "FLOW-2",
+      "source_entity_id": "AFSIM-2",
+      "target_entity_id": "AFSIM-3",
+      "packet_size_bytes": 512,
+      "interval_ms": 20,
+      "duration_ms": 1000,
+      "active": true
+    }
+  ]
+}

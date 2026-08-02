@@ -5,9 +5,16 @@
 need/
 
 # Local build directories
+.deps/
+.venv/
 build/
 cmake-build-*/
 out/
+output/
+test-results/
+.pytest_cache/
+__pycache__/
+*.py[cod]
 
 # Visual Studio and qmake build outputs
 **/x64/

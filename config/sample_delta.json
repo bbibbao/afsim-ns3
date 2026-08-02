@@ -1,0 +1,28 @@
+{
+  "protocol_version": "0.2",
+  "message_type": "afsim_delta",
+  "request_id": "delta-001",
+  "timestamp_ms": 1000,
+  "entity_upserts": [
+    {
+      "entity_id": "AFSIM-1",
+      "position": {
+        "x_m": 100.0
+      },
+      "devices": [
+        {
+          "device_id": "LINK-1",
+          "peer_entity_id": "AFSIM-2",
+          "kind": "wired",
+          "data_rate_bps": 10000000,
+          "delay_ms": 120.0,
+          "loss_rate": 0.0,
+          "link_state": "UP"
+        }
+      ]
+    }
+  ],
+  "entity_removals": [],
+  "flow_upserts": [],
+  "flow_removals": []
+}
