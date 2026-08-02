@@ -5,8 +5,11 @@
 #include "StateDeltaTracker.hpp"
 #include "TcpJsonlClient.hpp"
 
+#include <functional>
+#include <map>
 #include <mutex>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace afsim_ns3
@@ -30,6 +33,9 @@ enum class StateSubmitResult
     NoChange
 };
 
+using EffectErrorHandler =
+    std::function<void(const EffectDecision&, const std::string&)>;
+
 class AfsimBridgeController
 {
   public:
@@ -41,6 +47,7 @@ class AfsimBridgeController
 
     void Start();
     void Stop();
+    void SetEffectErrorHandler(EffectErrorHandler handler);
 
     void SubmitInitial(
         const std::string& requestId,
@@ -77,12 +84,19 @@ class AfsimBridgeController
 
   private:
     void OnJsonLine(const std::string& line);
+    void ReportEffectError(
+        const EffectDecision& decision,
+        const std::string& message) const noexcept;
 
     TcpJsonlClient mClient;
     StateDeltaTracker mDeltaTracker;
     NetworkEffectGate mGate;
     std::mutex mPendingEffectsMutex;
-    std::vector<EffectDecision> mPendingEffects;
+    std::map<
+        std::tuple<std::string, std::string, std::string, std::string>,
+        EffectDecision>
+        mPendingEffects;
+    EffectErrorHandler mEffectErrorHandler;
 };
 
 } // namespace afsim_ns3

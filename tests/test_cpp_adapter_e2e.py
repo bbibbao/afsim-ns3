@@ -64,7 +64,7 @@ class CppAdapterEndToEndTest(unittest.IsolatedAsyncioTestCase):
             stderr.decode("utf-8", errors="replace"),
         )
         self.assertIn(
-            "revision=2 weapon=BLOCKED radar=DEGRADED",
+            "revision=2 radar_error=recorded weapon=BLOCKED continued=1",
             stdout.decode("utf-8"),
         )
 

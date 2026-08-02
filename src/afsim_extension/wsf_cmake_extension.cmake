@@ -1,0 +1,5 @@
+set(WSF_EXT_NAME wsf_afsim_ns3)
+if(WSF_PLUGIN_BUILD)
+    set(WSF_EXT_TYPE plugin)
+endif()
+set(WSF_EXT_SOURCE_PATH .)

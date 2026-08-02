@@ -1,9 +1,24 @@
 #include "AfsimBridgeController.hpp"
 
+#include <exception>
 #include <utility>
 
 namespace afsim_ns3
 {
+namespace
+{
+
+auto
+EffectKey(const EffectDecision& decision)
+{
+    return std::make_tuple(
+        decision.entityId,
+        decision.subsystemType,
+        decision.subsystemId,
+        decision.peerEntityId);
+}
+
+} // namespace
 
 AfsimBridgeController::AfsimBridgeController(TcpClientConfig config)
     : mClient(std::move(config))
@@ -27,6 +42,12 @@ void
 AfsimBridgeController::Stop()
 {
     mClient.Stop();
+}
+
+void
+AfsimBridgeController::SetEffectErrorHandler(EffectErrorHandler handler)
+{
+    mEffectErrorHandler = std::move(handler);
 }
 
 void
@@ -90,16 +111,29 @@ AfsimBridgeController::SubmitDelta(
 std::size_t
 AfsimBridgeController::ApplyPendingEffects(IAfsimEffectSink& sink)
 {
-    std::vector<EffectDecision> pending;
+    decltype(mPendingEffects) pending;
     {
         std::lock_guard<std::mutex> lock(mPendingEffectsMutex);
         pending.swap(mPendingEffects);
     }
-    for (const auto& decision : pending)
+    std::size_t applied = 0;
+    for (const auto& entry : pending)
     {
-        sink.ApplyNetworkEffect(decision);
+        try
+        {
+            sink.ApplyNetworkEffect(entry.second);
+            ++applied;
+        }
+        catch (const std::exception& error)
+        {
+            ReportEffectError(entry.second, error.what());
+        }
+        catch (...)
+        {
+            ReportEffectError(entry.second, "unknown exception");
+        }
     }
-    return pending.size();
+    return applied;
 }
 
 EffectState
@@ -131,10 +165,30 @@ AfsimBridgeController::OnJsonLine(const std::string& line)
         return;
     }
     std::lock_guard<std::mutex> lock(mPendingEffectsMutex);
-    mPendingEffects.insert(
-        mPendingEffects.end(),
-        decisions.begin(),
-        decisions.end());
+    for (const auto& decision : decisions)
+    {
+        // Keep only the newest decision for each affected link and subsystem.
+        mPendingEffects[EffectKey(decision)] = decision;
+    }
+}
+
+void
+AfsimBridgeController::ReportEffectError(
+    const EffectDecision& decision,
+    const std::string& message) const noexcept
+{
+    if (!mEffectErrorHandler)
+    {
+        return;
+    }
+    try
+    {
+        mEffectErrorHandler(decision, message);
+    }
+    catch (...)
+    {
+        // A diagnostic hook must never prevent the remaining effects.
+    }
 }
 
 } // namespace afsim_ns3
