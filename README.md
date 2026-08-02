@@ -1,11 +1,10 @@
 # afsim-ns3
 
-Mac-first development workspace for the AFSIM 2.9cn / Visual Studio 2017 and
-ns-3 integration project.
+本仓库用于 AFSIM 2.9cn、Visual Studio 2017 与 ns-3 集成项目，当前以 Mac
+作为主要开发环境。
 
-## Repository layout
+## 仓库结构
 
-- `src/`: independent implementation workspace.
+- `src/`：独立实现代码目录。
 
-Generated Visual Studio, qmake, Qt translation, executable, debug, trace, and
-packet-capture outputs are intentionally excluded from version control.
+Visual Studio、qmake、Qt 翻译、可执行文件、调试、跟踪和抓包等生成内容均不纳入版本控制。
