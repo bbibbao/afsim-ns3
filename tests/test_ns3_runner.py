@@ -133,6 +133,25 @@ class Ns3RunnerIntegrationTest(unittest.TestCase):
             )
         )
 
+        total_loss = sample("sample_init.json")
+        total_loss["entities"][0]["devices"][0]["loss_rate"] = 1.0
+        total_loss_state = StateStore()
+        total_loss_state.initialize(total_loss, 0)
+        total_loss_metrics = self.runner.compute(
+            total_loss_state.snapshot(),
+            "total-loss-001",
+        )
+        total_loss_flow = next(
+            metric
+            for metric in total_loss_metrics["metrics"]
+            if metric["flow_id"] == "FLOW-1"
+        )
+        self.assertTrue(total_loss_flow["connected"])
+        self.assertEqual(total_loss_flow["loss_rate"], 1.0)
+        self.assertGreater(total_loss_flow["tx_packets"], 0)
+        self.assertEqual(total_loss_flow["rx_packets"], 0)
+        self.assertEqual(total_loss_flow["link_state"], "UP")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AfsimNs3Protocol.hpp"
+#include "MessageTransportGate.hpp"
 #include "NetworkEffectGate.hpp"
 #include "StateDeltaTracker.hpp"
 #include "TcpJsonlClient.hpp"
@@ -79,6 +80,13 @@ class AfsimBridgeController
         const std::string& entityId,
         const std::string& subsystemId) const;
 
+    MessageTransportDecision DecideMessage(
+        const std::string& sourceEntityId,
+        const std::string& targetEntityId,
+        std::uint64_t messageSerial) const;
+
+    std::uint64_t LatestMetricsRevision() const;
+
     bool IsConnected() const;
     std::size_t PendingNetworkMessages() const;
 
@@ -90,6 +98,7 @@ class AfsimBridgeController
 
     TcpJsonlClient mClient;
     StateDeltaTracker mDeltaTracker;
+    MessageTransportGate mMessageGate;
     NetworkEffectGate mGate;
     std::mutex mPendingEffectsMutex;
     std::map<

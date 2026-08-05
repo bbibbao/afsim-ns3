@@ -7,6 +7,7 @@ add_library(
     AfsimBridgeController.cpp
     AfsimNs3Protocol.cpp
     GeoCoordinates.cpp
+    MessageTransportGate.cpp
     NetworkEffectGate.cpp
     StateDeltaTracker.cpp
     TcpJsonlClient.cpp)

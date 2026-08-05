@@ -196,6 +196,15 @@ main(int argc, char** argv)
         std::cerr << "initial effects were not available\n";
         return 5;
     }
+    const auto initialMessage =
+        controller.DecideMessage("AFSIM-1", "AFSIM-2", 1001);
+    if (initialMessage.disposition != MessageDisposition::Deliver ||
+        initialMessage.delayMs < 10.0 || initialMessage.revision != 1)
+    {
+        controller.Stop();
+        std::cerr << "initial message transport decision was invalid\n";
+        return 12;
+    }
 
     if (controller.SubmitCurrentState(
             "cpp-no-change", 500, entities, flows) !=
@@ -224,6 +233,15 @@ main(int argc, char** argv)
         std::cerr << "isolated effect metrics timed out\n";
         return 8;
     }
+    const auto delayedMessage =
+        controller.DecideMessage("AFSIM-1", "AFSIM-2", 1002);
+    if (delayedMessage.disposition != MessageDisposition::Deliver ||
+        delayedMessage.delayMs < 120.0 || delayedMessage.revision != 2)
+    {
+        controller.Stop();
+        std::cerr << "delayed message transport decision was invalid\n";
+        return 13;
+    }
     controller.Stop();
 
     if (sink.states[{2, "WEAPON-1"}] != EffectState::Blocked ||
@@ -251,6 +269,7 @@ main(int argc, char** argv)
         return 11;
     }
 
-    std::cout << "revision=2 radar_error=recorded weapon=BLOCKED continued=1\n";
+    std::cout << "revision=2 radar_error=recorded weapon=BLOCKED continued=1 "
+              << "message=DELIVER delay_ms=" << delayedMessage.delayMs << '\n';
     return 0;
 }

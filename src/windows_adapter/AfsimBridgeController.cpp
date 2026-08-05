@@ -144,6 +144,24 @@ AfsimBridgeController::GetState(
     return mGate.GetState(entityId, subsystemId);
 }
 
+MessageTransportDecision
+AfsimBridgeController::DecideMessage(
+    const std::string& sourceEntityId,
+    const std::string& targetEntityId,
+    std::uint64_t messageSerial) const
+{
+    return mMessageGate.Decide(
+        sourceEntityId,
+        targetEntityId,
+        messageSerial);
+}
+
+std::uint64_t
+AfsimBridgeController::LatestMetricsRevision() const
+{
+    return mMessageGate.LatestRevision();
+}
+
 bool
 AfsimBridgeController::IsConnected() const
 {
@@ -159,6 +177,7 @@ AfsimBridgeController::PendingNetworkMessages() const
 void
 AfsimBridgeController::OnJsonLine(const std::string& line)
 {
+    mMessageGate.UpdateFromMetricsJson(line);
     const auto decisions = mGate.UpdateFromMetricsJson(line);
     if (decisions.empty())
     {

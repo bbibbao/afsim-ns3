@@ -19,12 +19,9 @@
 #include "WsfMessage.hpp"
 #include "WsfPlatform.hpp"
 #include "WsfPlugin.hpp"
-#include "WsfRadarSensor.hpp"
 #include "WsfScenario.hpp"
-#include "WsfSensor.hpp"
 #include "WsfSimulation.hpp"
 #include "WsfSimulationExtension.hpp"
-#include "WsfWeapon.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -48,12 +45,21 @@ namespace
 {
 
 constexpr char ExtensionName[] = "afsim_ns3_bridge";
+constexpr char GateDropReasonPrefix[] = "AFSIM_NS3_GATE_DROP:";
+constexpr char GateTotalDelayReasonPrefix[] =
+   "AFSIM_NS3_GATE_TOTAL_DELAY_SECONDS:";
 constexpr double Pi = 3.14159265358979323846;
 
 std::string EnvironmentText(const char* name, const std::string& fallback)
 {
    const char* value = std::getenv(name);
    return value != nullptr && *value != '\0' ? value : fallback;
+}
+
+bool EnvironmentHasValue(const char* name)
+{
+   const char* value = std::getenv(name);
+   return value != nullptr && *value != '\0';
 }
 
 double EnvironmentDouble(const char* name, double fallback, double minimum)
@@ -166,14 +172,11 @@ struct RuntimeConfig
    std::uint64_t defaultDataRateBps{
       EnvironmentUint64("AFSIM_NS3_DATA_RATE_BPS", 1000000, 1)};
    double defaultDelayMs{EnvironmentDouble("AFSIM_NS3_DELAY_MS", 1.0, 0.0)};
+   bool delayOverride{EnvironmentHasValue("AFSIM_NS3_DELAY_MS")};
    double defaultLossRate{
       std::min(1.0, EnvironmentDouble("AFSIM_NS3_LOSS_RATE", 0.0, 0.0))};
+   bool lossOverride{EnvironmentHasValue("AFSIM_NS3_LOSS_RATE")};
    std::string linkKind{EnvironmentText("AFSIM_NS3_LINK_KIND", "wireless")};
-   double maxDelayMs{EnvironmentDouble("AFSIM_NS3_MAX_DELAY_MS", 100.0, 0.0)};
-   double maxLossRate{
-      std::min(1.0, EnvironmentDouble("AFSIM_NS3_MAX_LOSS_RATE", 0.2, 0.0))};
-   double minThroughputBps{
-      EnvironmentDouble("AFSIM_NS3_MIN_THROUGHPUT_BPS", 1000.0, 0.0)};
    bool traceTicks{EnvironmentFlag("AFSIM_NS3_TRACE_TICKS", false)};
 };
 
@@ -318,83 +321,10 @@ public:
 
    void ApplyNetworkEffect(const afsim_ns3::EffectDecision& decision) override
    {
-      WsfPlatform* platform = FindPlatform(decision.entityId);
-      if (platform == nullptr)
-      {
-         AppendLog("EFFECT_MISS entity=" + decision.entityId + " subsystem=" + decision.subsystemId);
-         return;
-      }
-
-      WsfPlatformPart* part = nullptr;
-      if (decision.subsystemType == "radar")
-      {
-         for (unsigned int index = 0; index < platform->GetComponentCount<WsfSensor>(); ++index)
-         {
-            WsfSensor* sensor = platform->GetComponentEntry<WsfSensor>(index);
-            if (sensor != nullptr && dynamic_cast<WsfRadarSensor*>(sensor) != nullptr &&
-                sensor->GetName() == decision.subsystemId)
-            {
-               part = sensor;
-               break;
-            }
-         }
-      }
-      else if (decision.subsystemType == "weapon")
-      {
-         for (unsigned int index = 0; index < platform->GetComponentCount<WsfWeapon>(); ++index)
-         {
-            WsfWeapon* weapon = platform->GetComponentEntry<WsfWeapon>(index);
-            if (weapon != nullptr && weapon->GetName() == decision.subsystemId)
-            {
-               part = weapon;
-               break;
-            }
-         }
-      }
-
-      if (part == nullptr)
-      {
-         AppendLog("EFFECT_MISS entity=" + decision.entityId + " subsystem=" + decision.subsystemId);
-         return;
-      }
-
-      const auto key = std::make_tuple(
-         decision.entityId,
-         decision.subsystemType,
-         decision.subsystemId);
-      bool changed = false;
-      if (decision.state == afsim_ns3::EffectState::Available)
-      {
-         const auto found = mDisabledByBridge.find(key);
-         if (found != mDisabledByBridge.end())
-         {
-            if (!part->IsTurnedOn() && part->CanBeTurnedOn())
-            {
-               part->TurnOn(GetSimulation().GetSimTime());
-               changed = part->IsTurnedOn();
-            }
-            if (part->IsTurnedOn())
-            {
-               mDisabledByBridge.erase(found);
-            }
-         }
-      }
-      else if (part->IsTurnedOn() && part->CanBeTurnedOff())
-      {
-         part->TurnOff(GetSimulation().GetSimTime());
-         if (!part->IsTurnedOn())
-         {
-            // Only restore parts that this bridge actually turned off.
-            mDisabledByBridge.insert(key);
-            changed = true;
-         }
-      }
-
       AppendLog(
-         "EFFECT entity=" + decision.entityId + " subsystem=" + decision.subsystemId +
-         " state=" + afsim_ns3::ToString(decision.state) +
-         " changed=" + (changed ? "1" : "0") +
-         " turned_on=" + (part->IsTurnedOn() ? "1" : "0"));
+         "EFFECT_IGNORED entity=" + decision.entityId +
+         " subsystem=" + decision.subsystemId +
+         " state=" + afsim_ns3::ToString(decision.state));
    }
 
 private:
@@ -412,6 +342,10 @@ private:
       auto* manager = GetSimulation().GetCommNetworkManager();
       auto* receiver = manager != nullptr ? manager->GetComm(message.GetDstAddr()) : nullptr;
       RecordFlow(simTime, transmitter, receiver, message);
+      std::ostringstream trace;
+      trace << "MESSAGE_TX serial=" << message.GetSerialNumber()
+            << " sim_time=" << std::fixed << std::setprecision(6) << simTime;
+      AppendLog(trace.str());
    }
 
    void MessageDeliveryAttempt(
@@ -426,9 +360,74 @@ private:
          return;
       }
 
+      const MessageKey messageKey{
+         transmitter,
+         message.GetSerialNumber()};
+      mExternallyGatedMessages.insert(messageKey);
       RecordFlow(simTime, transmitter, receiver, message);
       auto& observation = mLinkObservations[{transmitter, receiver}];
       UpdateObservedDataRate(observation, result);
+
+      const auto* sourcePlatform = transmitter->GetPlatform();
+      const auto* targetPlatform = receiver->GetPlatform();
+      if (sourcePlatform == nullptr || targetPlatform == nullptr)
+      {
+         mExternallyDroppedMessages.insert(messageKey);
+         result.mCheckedStatus |= WsfEM_Interaction::cSIGNAL_LEVEL;
+         result.mFailedStatus |= WsfEM_Interaction::cSIGNAL_LEVEL;
+         result.setDisconnectReason(
+            wsf::comm::LinkDisconnectReasonType::UNKNOWN_ERROR,
+            std::string(GateDropReasonPrefix) + "PLATFORM_NOT_FOUND");
+         AppendLog(
+            "MESSAGE_GATE serial=" + std::to_string(message.GetSerialNumber()) +
+            " decision=NO_LINK reason=PLATFORM_NOT_FOUND");
+         return;
+      }
+
+      const std::string sourceEntityId =
+         std::to_string(sourcePlatform->GetIndex());
+      const std::string targetEntityId =
+         std::to_string(targetPlatform->GetIndex());
+      const auto decision = mController.DecideMessage(
+         sourceEntityId,
+         targetEntityId,
+         message.GetSerialNumber());
+
+      const bool externalDrop =
+         decision.disposition != afsim_ns3::MessageDisposition::Deliver;
+      const double totalDelaySeconds = externalDrop
+         ? 0.0
+         : std::max(0.0, decision.delayMs) / 1000.0;
+      result.mCheckedStatus |= WsfEM_Interaction::cSIGNAL_LEVEL;
+      if (externalDrop)
+      {
+         mExternallyDroppedMessages.insert(messageKey);
+         result.mFailedStatus |= WsfEM_Interaction::cSIGNAL_LEVEL;
+         result.setDisconnectReason(
+            decision.disposition == afsim_ns3::MessageDisposition::NoLink
+               ? wsf::comm::LinkDisconnectReasonType::NO_ROUTER_BRIDGE
+               : wsf::comm::LinkDisconnectReasonType::SIGNAL_LEVEL_INSUFFICIENT,
+            std::string(GateDropReasonPrefix) + decision.reason);
+      }
+      else
+      {
+         mExternallyDroppedMessages.erase(messageKey);
+         result.setDisconnectReason(
+            wsf::comm::LinkDisconnectReasonType::LINK_CONNECTED,
+            std::string(GateTotalDelayReasonPrefix) +
+               std::to_string(totalDelaySeconds));
+      }
+
+      std::ostringstream gateLog;
+      gateLog << "MESSAGE_GATE serial=" << message.GetSerialNumber()
+              << " source=" << sourceEntityId
+              << " target=" << targetEntityId
+              << " revision=" << decision.revision
+              << " decision=" << afsim_ns3::ToString(decision.disposition)
+              << " reason=" << decision.reason
+              << " delay_ms=" << std::fixed << std::setprecision(3) << decision.delayMs
+              << " loss_rate=" << decision.lossRate;
+      AppendLog(gateLog.str());
    }
 
    void MessageReceived(
@@ -445,14 +444,30 @@ private:
 
       RecordFlow(simTime, transmitter, receiver, message);
       auto& observation = mLinkObservations[{transmitter, receiver}];
+      const MessageKey messageKey{
+         transmitter,
+         message.GetSerialNumber()};
+      const bool externallyGated =
+         mExternallyGatedMessages.erase(messageKey) > 0;
       ++observation.completed;
       if (result.mFailedStatus != 0)
       {
          ++observation.failures;
       }
-      UpdateObservedDelayAndRate(
-         simTime, transmitter, message, observation, true);
+      if (!externallyGated)
+      {
+         UpdateObservedDelayAndRate(
+            simTime, transmitter, message, observation, true);
+      }
+      else
+      {
+         mTransmitTimes.erase(messageKey);
+      }
       UpdateObservedDataRate(observation, result);
+      std::ostringstream trace;
+      trace << "MESSAGE_RX serial=" << message.GetSerialNumber()
+            << " sim_time=" << std::fixed << std::setprecision(6) << simTime;
+      AppendLog(trace.str());
    }
 
    void MessageDiscarded(
@@ -470,10 +485,32 @@ private:
 
       RecordFlow(simTime, transmitter, receiver, message);
       auto& observation = mLinkObservations[{transmitter, receiver}];
-      ++observation.completed;
-      ++observation.failures;
-      UpdateObservedDelayAndRate(
-         simTime, transmitter, message, observation, false);
+      const MessageKey messageKey{
+         transmitter,
+         message.GetSerialNumber()};
+      const bool externallyDropped =
+         mExternallyDroppedMessages.erase(messageKey) > 0;
+      const bool externallyGated =
+         mExternallyGatedMessages.erase(messageKey) > 0;
+      if (!externallyDropped)
+      {
+         ++observation.completed;
+         ++observation.failures;
+         if (!externallyGated)
+         {
+            UpdateObservedDelayAndRate(
+               simTime, transmitter, message, observation, false);
+         }
+         else
+         {
+            mTransmitTimes.erase(messageKey);
+         }
+      }
+      std::ostringstream trace;
+      trace << "MESSAGE_DISCARD serial=" << message.GetSerialNumber()
+            << " sim_time=" << std::fixed << std::setprecision(6) << simTime
+            << " external=" << (externallyDropped ? 1 : 0);
+      AppendLog(trace.str());
    }
 
    static void UpdateObservedDataRate(
@@ -500,7 +537,9 @@ private:
          mTransmitTimes.find({transmitter, message.GetSerialNumber()});
       if (transmitted != mTransmitTimes.end())
       {
-         const double delaySeconds = std::max(0.0, simTime - transmitted->second);
+         const double delaySeconds = std::max(
+            0.0,
+            simTime - transmitted->second);
          const double delayMs = delaySeconds * 1000.0;
          if (std::isfinite(delayMs))
          {
@@ -518,6 +557,7 @@ private:
                observation.hasDataRate = true;
             }
          }
+         mTransmitTimes.erase(transmitted);
       }
    }
 
@@ -627,14 +667,14 @@ private:
       return configured;
    }
 
-   double ConfiguredDelayMs(
+   double NativeGuidedDelayMs(
       const wsf::comm::Comm* transmitter,
       const wsf::comm::Comm* receiver) const
    {
       auto* mode = GuidedMode(transmitter);
       if (mode == nullptr)
       {
-         return mConfig.defaultDelayMs;
+         return -1.0;
       }
 
       double delaySeconds = std::max(0.0, mode->GetDelayTime().LastDraw());
@@ -654,11 +694,27 @@ private:
       return std::max(0.0, delaySeconds * 1000.0);
    }
 
-   double ConfiguredLossRate(const wsf::comm::Comm* comm) const
+   double ConfiguredDelayMs(
+      const wsf::comm::Comm* transmitter,
+      const wsf::comm::Comm* receiver) const
    {
-      // The guided medium has no configured random packet-loss probability;
-      // actual receive/discard observations replace this value once traffic exists.
-      return GuidedMode(comm) != nullptr ? 0.0 : mConfig.defaultLossRate;
+      if (mConfig.delayOverride)
+      {
+         return mConfig.defaultDelayMs;
+      }
+      const double nativeDelayMs =
+         NativeGuidedDelayMs(transmitter, receiver);
+      return nativeDelayMs >= 0.0
+                ? nativeDelayMs
+                : mConfig.defaultDelayMs;
+   }
+
+   double ConfiguredLossRate(const wsf::comm::Comm*) const
+   {
+      // AFSIM 2.9 does not expose a configured random packet-loss probability
+      // for every medium.  Use the explicit fallback until real receive/discard
+      // observations are available for this peer.
+      return mConfig.defaultLossRate;
    }
 
    std::string LinkKind(const wsf::comm::Comm* comm) const
@@ -888,11 +944,11 @@ private:
                   {
                      dataRate = observation->lastDataRateBps;
                   }
-                  if (observation->hasDelay)
+                  if (observation->hasDelay && !mConfig.delayOverride)
                   {
                      delayMs = observation->lastDelayMs;
                   }
-                  if (observation->hasLoss)
+                  if (observation->hasLoss && !mConfig.lossOverride)
                   {
                      lossRate = observation->lastLossRate;
                   }
@@ -914,31 +970,6 @@ private:
                   upLinks.insert({record.entityId, peerEntityId});
                }
                entity.devices.push_back(std::move(device));
-            }
-         }
-
-         if (!entity.devices.empty())
-         {
-            const std::string peerEntityId = entity.devices.front().peerEntityId;
-            for (unsigned int index = 0;
-                 index < record.platform->GetComponentCount<WsfSensor>();
-                 ++index)
-            {
-               auto* sensor = record.platform->GetComponentEntry<WsfSensor>(index);
-               if (sensor != nullptr && dynamic_cast<WsfRadarSensor*>(sensor) != nullptr)
-               {
-                  entity.effectPolicies.push_back(MakePolicy(sensor->GetName(), "radar", peerEntityId));
-               }
-            }
-            for (unsigned int index = 0;
-                 index < record.platform->GetComponentCount<WsfWeapon>();
-                 ++index)
-            {
-               auto* weapon = record.platform->GetComponentEntry<WsfWeapon>(index);
-               if (weapon != nullptr)
-               {
-                  entity.effectPolicies.push_back(MakePolicy(weapon->GetName(), "weapon", peerEntityId));
-               }
             }
          }
 
@@ -982,36 +1013,6 @@ private:
       }
    }
 
-   afsim_ns3::EffectPolicy MakePolicy(
-      const std::string& subsystemId,
-      const std::string& subsystemType,
-      const std::string& peerEntityId) const
-   {
-      afsim_ns3::EffectPolicy policy;
-      policy.subsystemId = subsystemId;
-      policy.subsystemType = subsystemType;
-      policy.peerEntityId = peerEntityId;
-      policy.maxDelayMs = mConfig.maxDelayMs;
-      policy.maxLossRate = mConfig.maxLossRate;
-      policy.minThroughputBps = mConfig.minThroughputBps;
-      // This integration version uses a binary operational gate: a threshold violation blocks the part.
-      policy.violationState = "BLOCKED";
-      return policy;
-   }
-
-   WsfPlatform* FindPlatform(const std::string& entityId)
-   {
-      try
-      {
-         const auto index = static_cast<std::size_t>(std::stoull(entityId));
-         return GetSimulation().GetPlatformByIndex(index);
-      }
-      catch (...)
-      {
-         return nullptr;
-      }
-   }
-
    RuntimeConfig mConfig;
    afsim_ns3::AfsimBridgeController mController;
    std::unique_ptr<afsim_ns3::LocalEnuFrame> mEnuFrame;
@@ -1019,8 +1020,9 @@ private:
    std::map<const wsf::comm::Comm*, std::uint64_t> mConfiguredDataRates;
    std::map<LinkKey, LinkObservation> mLinkObservations;
    std::map<MessageKey, double> mTransmitTimes;
+   std::set<MessageKey> mExternallyGatedMessages;
+   std::set<MessageKey> mExternallyDroppedMessages;
    std::map<FlowKey, ObservedFlow> mObservedFlows;
-   std::set<std::tuple<std::string, std::string, std::string>> mDisabledByBridge;
    std::string mRunId;
    std::uint64_t mTick{};
    bool mStopping{};

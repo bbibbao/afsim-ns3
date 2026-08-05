@@ -67,6 +67,7 @@ class CppAdapterEndToEndTest(unittest.IsolatedAsyncioTestCase):
             "revision=2 radar_error=recorded weapon=BLOCKED continued=1",
             stdout.decode("utf-8"),
         )
+        self.assertIn("message=DELIVER delay_ms=", stdout.decode("utf-8"))
 
         latest = self.metrics_store.latest()
         self.assertEqual(latest["revision"], 2)

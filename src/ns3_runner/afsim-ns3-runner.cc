@@ -181,6 +181,53 @@ ValidateScenario(const Scenario& scenario)
     }
 }
 
+bool
+HasActivePath(
+    const Scenario& scenario,
+    uint32_t source,
+    uint32_t target)
+{
+    if (source >= scenario.nodes.size() || target >= scenario.nodes.size() ||
+        !scenario.nodes[source].alive || !scenario.nodes[target].alive)
+    {
+        return false;
+    }
+
+    std::vector<std::vector<uint32_t>> adjacency(scenario.nodes.size());
+    for (const auto& link : scenario.links)
+    {
+        if (!link.up || !scenario.nodes[link.source].alive ||
+            !scenario.nodes[link.target].alive)
+        {
+            continue;
+        }
+        adjacency[link.source].push_back(link.target);
+        adjacency[link.target].push_back(link.source);
+    }
+
+    std::vector<bool> visited(scenario.nodes.size(), false);
+    std::vector<uint32_t> pending{source};
+    visited[source] = true;
+    while (!pending.empty())
+    {
+        const auto current = pending.back();
+        pending.pop_back();
+        if (current == target)
+        {
+            return true;
+        }
+        for (const auto next : adjacency[current])
+        {
+            if (!visited[next])
+            {
+                visited[next] = true;
+                pending.push_back(next);
+            }
+        }
+    }
+    return false;
+}
+
 void
 RunScenario(const Scenario& scenario)
 {
@@ -313,7 +360,9 @@ RunScenario(const Scenario& scenario)
     std::cout << std::fixed << std::setprecision(6);
     for (const auto& flow : scenario.flows)
     {
-        bool connected = false;
+        const bool connected =
+            flow.enabled &&
+            HasActivePath(scenario, flow.source, flow.target);
         double latencyMs = 0.0;
         double lossRate = 1.0;
         double throughputBps = 0.0;
@@ -326,7 +375,6 @@ RunScenario(const Scenario& scenario)
             const auto& stats = found->second;
             txPackets = stats.txPackets;
             rxPackets = stats.rxPackets;
-            connected = rxPackets > 0;
             if (rxPackets > 0)
             {
                 latencyMs =

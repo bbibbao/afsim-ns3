@@ -22,6 +22,10 @@ if not exist "%AFSIM_BUILD_ROOT%\lib\%BUILD_CONFIG%\wsf.lib" (
   exit /b 2
 )
 
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ^
+  "%SOURCE_DIR%\patch_afsim_message_gate.ps1" "%AFSIM_SOURCE_ROOT%"
+if errorlevel 1 exit /b 3
+
 set "CMAKE_EXE=cmake.exe"
 where cmake.exe >nul 2>nul
 if errorlevel 1 (
@@ -34,24 +38,28 @@ if not exist "%CMAKE_EXE%" (
   where "%CMAKE_EXE%" >nul 2>nul
   if errorlevel 1 (
     echo [错误] 未找到 CMake。
-    exit /b 3
+    exit /b 4
   )
 )
+
+"%CMAKE_EXE%" --build "%AFSIM_BUILD_ROOT%" ^
+  --config %BUILD_CONFIG% --target wsf
+if errorlevel 1 exit /b 5
 
 "%CMAKE_EXE%" -S "%SOURCE_DIR%" -B "%BUILD_DIR%" ^
   -G "Visual Studio 15 2017 Win64" ^
   -DAFSIM_SOURCE_ROOT="%AFSIM_SOURCE_ROOT%" ^
   -DAFSIM_BUILD_ROOT="%AFSIM_BUILD_ROOT%" ^
   -DAFSIM_LIBRARY_CONFIG=%BUILD_CONFIG%
-if errorlevel 1 exit /b 4
+if errorlevel 1 exit /b 6
 
 "%CMAKE_EXE%" --build "%BUILD_DIR%" --config %BUILD_CONFIG% --target wsf_afsim_ns3
-if errorlevel 1 exit /b 5
+if errorlevel 1 exit /b 7
 
 set "PLUGIN_DLL=%BUILD_DIR%\%BUILD_CONFIG%\wsf_afsim_ns3.dll"
 if not exist "%PLUGIN_DLL%" (
   echo [错误] 构建完成但未找到插件：%PLUGIN_DLL%
-  exit /b 6
+  exit /b 8
 )
 
 echo [完成] %PLUGIN_DLL%
